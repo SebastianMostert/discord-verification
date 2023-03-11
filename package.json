@@ -1,0 +1,32 @@
+{
+  "name": "discord-verification",
+  "version": "1.1.0",
+  "description": "A package to help with verification.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Discord.js",
+    "Verification",
+    "Discord Verification",
+    "Discord.JS V14"
+  ],
+  "author": {
+    "name": "Sebastian Mostert",
+    "email": "sebastianmostert663@gmail.com",
+    "url": "https://github.com/That-Half-Dead-Skeleton"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.7.1"
+  },
+  "bugs": {
+    "url": "https://github.com/That-Half-Dead-Skeleton/discord-verification/issues"
+  },
+  "homepage": "https://github.com/That-Half-Dead-Skeleton/discord-verification#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/That-Half-Dead-Skeleton/discord-verification.git"
+  }
+}
