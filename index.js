@@ -1,252 +1,333 @@
-const { ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder, User, BaseInteraction } = require("discord.js");
+const {
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  EmbedBuilder,
+  Embed,
+} = require("discord.js");
+
+// Custom Errors
+class VerificationError extends Error { }
+
+class IncorrectNumberOfArgumentsError extends VerificationError {
+  constructor(expected, received) {
+    super(`Incorrect number of arguments. Expected ${expected}, received ${received}.`);
+    this.name = 'IncorrectNumberOfArgumentsError';
+  }
+}
+
+class IncorrectOptionTypeError extends VerificationError {
+  constructor(optionName, expected, received) {
+    super(`The "${optionName}" option must be of type ${expected}. Received: ${received}`);
+    this.name = 'IncorrectOptionTypeError';
+  }
+}
+
+class InvalidPinError extends VerificationError {
+  constructor() {
+    super('Invalid characters in the pin. Only numeric characters are allowed.');
+    this.name = 'InvalidPinError';
+  }
+}
+
+class InvalidPinLengthError extends VerificationError {
+  constructor() {
+    super('Invalid pin length. The pin must be exactly 4 digits long.');
+    this.name = 'InvalidPinLengthError';
+  }
+}
+
+class MissingFieldsError extends VerificationError {
+  constructor() {
+    super(`Embed must contain a fields property.`);
+    this.name = 'MissingFieldsError';
+  }
+}
+
+class IncorrectFieldsLengthError extends VerificationError {
+  constructor(field) {
+    super(`The ${field} array must be of length 2.`);
+    this.name = 'IncorrectFieldsLengthError';
+  }
+}
+
+class IncorrectFieldTypeError extends VerificationError {
+  constructor(field, expected, received) {
+    super(`The "${field}" option must be of type ${expected}. Received: ${received}`);
+    this.name = 'IncorrectFieldTypeError';
+  }
+}
+
 
 module.exports = class Verification {
-    constructor({ pin } = { pin: undefined }) {
-        this.pin = pin
+  constructor({ pin } = { pin: undefined }) {
+    this.pin = pin || this.generatePin();
+    this.verified = false;
+  }
+
+  /**
+   * @description This will generate a new 4 digit pin
+   * @returns {string} A 4 digit number
+   */
+  static generatePin() {
+    return (Math.floor(Math.random() * 10000) + 10000).toString().substring(1);
+  }
+
+  /**
+   * @description This creates the verification menu.
+   *
+   * @returns {object} An object containing the buttons and the embed
+   */
+  verificationStart() {
+    const buttonRows = [];
+    for (let i = 0; i < 10; i += 5) {
+      const row = new ActionRowBuilder();
+      for (let j = i; j < i + 5; j++) {
+        const btn = new ButtonBuilder()
+          .setCustomId(`verify-number-${j}`)
+          .setLabel(j.toString())
+          .setStyle(ButtonStyle.Primary);
+        row.addComponents(btn);
+      }
+      buttonRows.push(row);
+    }
+
+    const btnVerify = new ButtonBuilder()
+      .setCustomId("verify-check")
+      .setLabel("Verify")
+      .setStyle(ButtonStyle.Success);
+
+    const btnRetry = new ButtonBuilder()
+      .setCustomId("verify-retry")
+      .setLabel("Retry")
+      .setStyle(ButtonStyle.Danger);
+
+    const row3 = new ActionRowBuilder().addComponents(btnVerify, btnRetry);
+
+    const components = [...buttonRows, row3];
+
+    const verifyEmbed = new EmbedBuilder().addFields(
+      {
+        name: "Enter these numbers",
+        value: `\`\`\`js\n${this.pin}\n\`\`\``,
+      },
+      {
+        name: "Input",
+        value: "```js\n \n```",
+      }
+    );
+
+    return {
+      embeds: [verifyEmbed],
+      components,
     };
+  }
 
-    get _pin() {
-        const pin = this.pin;
-        if (!pin) this._pin = (Math.floor(Math.random() * 10000) + 10000).toString().substring(1);
-        return this.pin;
+  /**
+   * @param {object} options The options object
+   * @param {number} options.number The number the user just entered
+   * @param {Embed} options.embed The embed too update
+   *
+   * @description This will add a number too the pin entered by the user.
+   *
+   * @returns {EmbedBuilder} The updated embed
+   */
+  verificationAddNumber(options = {}) {
+    const { number } = options;
+    let { embed } = options;
+
+    if (embed instanceof EmbedBuilder) embed = this.convertEmbedBuilder(embed);
+
+    //#region Error Handling
+    const lengthOfObj = Object.keys(options).length;
+    if (lengthOfObj !== 2) {
+      throw new IncorrectNumberOfArgumentsError(2, lengthOfObj);
     }
 
-    set _pin(pin) {
-        this.pin = pin;
+    const numberType = typeof number;
+    if (numberType != "number") {
+      throw new IncorrectOptionTypeError("number", "number", typeof number);
+
     }
 
+    this.verifyEmbed(embed);
+    //#endregion
+    const previousInput = embed.fields[1].value.replace(/```|js|\n|\s/g, "");
+
+    const updatedInput = `\`\`\`js\n${previousInput}${number}\n\`\`\``;
+
+    const newEmbed = new EmbedBuilder(embed).setFields(
+      {
+        name: "Enter these numbers",
+        value: this.pin.toString(),
+      },
+      {
+        name: "Input",
+        value: updatedInput,
+      }
+    );
+
+    return newEmbed;
+  }
+
+  /**
+   * @description This will clear whatever the user has entered so far, generate a new pin and then let the user try again
+   *
+   * @returns {EmbedBuilder} Returns the new embed builder
+   */
+  verificationRetry() {
+    this.pin = this.generatePin();
+
+    const verifyEmbed = new EmbedBuilder().addFields(
+      {
+        name: "Enter these numbers",
+        value: `\`\`\`js\n${this.pin.toString()}\n\`\`\``,
+      },
+      {
+        name: "Input",
+        value: "```js\n \n```",
+      }
+    );
+
+    return verifyEmbed;
+  }
+
+  /**
+   * @param {Embed} embed The embed
+   *
+   * @description This will check if the code entered by the user is the same as the pin
+   *
+   * @returns {boolean} Wether or not the user passed verification
+   */
+  verificationCheck(embed) {
+    if (embed instanceof EmbedBuilder) embed = this.convertEmbedBuilder(embed);
+    const originalNumber = this.pin;
+    const inputNumberStr = embed.fields[1].value.replace(/```|js|\n|\s/g, ""); // Remove non-numeric characters
+    const inputNumber = this.convertToNum(inputNumberStr);
+
+    const isCorrect = originalNumber == inputNumber;
+    this.verified = isCorrect;
+    return this.verified;
+  }
+
+  /**
+   * @param {number|string|undefined} newPin The new pin
+   *
+   * @description This sets a new pin
+   */
+  verificationNewPin(newPin) {
     /**
-      * @param {object} options
-      * @param {User} options.user
-      * @param {import("discord.js").Interaction} options.interaction
-      */
-    async verificationStart(options = {}) {
-        const { user, interaction } = options;
-
-        if (!interaction.deferred) await interaction.deferReply({ ephemeral: true })
-
-        //#region Buttons 0 - 4
-        const btn0 = new ButtonBuilder()
-            .setCustomId('verify-number-0')
-            .setLabel('0')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn1 = new ButtonBuilder()
-            .setCustomId('verify-number-1')
-            .setLabel('1')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn2 = new ButtonBuilder()
-            .setCustomId('verify-number-2')
-            .setLabel('2')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn3 = new ButtonBuilder()
-            .setCustomId('verify-number-3')
-            .setLabel('3')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn4 = new ButtonBuilder()
-            .setCustomId('verify-number-4')
-            .setLabel('4')
-            .setStyle(ButtonStyle.Primary)
-        //#endregion
-
-        //#region Buttons 5 - 9
-        const btn5 = new ButtonBuilder()
-            .setCustomId('verify-number-5')
-            .setLabel('5')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn6 = new ButtonBuilder()
-            .setCustomId('verify-number-6')
-            .setLabel('6')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn7 = new ButtonBuilder()
-            .setCustomId('verify-number-7')
-            .setLabel('7')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn8 = new ButtonBuilder()
-            .setCustomId('verify-number-8')
-            .setLabel('8')
-            .setStyle(ButtonStyle.Primary)
-
-        const btn9 = new ButtonBuilder()
-            .setCustomId('verify-number-9')
-            .setLabel('9')
-            .setStyle(ButtonStyle.Primary)
-        //#endregion
-
-        //#region Other buttons
-        const btnVerify = new ButtonBuilder()
-            .setCustomId('verify-check')
-            .setLabel('Verify')
-            .setStyle(ButtonStyle.Success)
-
-        const btnRetry = new ButtonBuilder()
-            .setCustomId('verify-retry')
-            .setLabel('Retry')
-            .setStyle(ButtonStyle.Danger)
-        //#endregion
-
-        //#region Rows
-        const row1 = new ActionRowBuilder()
-            .addComponents(
-                btn0,
-                btn1,
-                btn2,
-                btn3,
-                btn4,
-            )
-
-        const row2 = new ActionRowBuilder()
-            .addComponents(
-                btn5,
-                btn6,
-                btn7,
-                btn8,
-                btn9,
-            )
-
-        const row3 = new ActionRowBuilder()
-            .addComponents(
-                btnVerify,
-                btnRetry
-            )
-
-        const components = [row1, row2, row3]
-        //#endregion
-
-        let pin = this?._pin;
-        if (!pin) pin = this?.pin;
-
-        const verifyEmbed = new EmbedBuilder()
-            .setAuthor({ name: user.tag, iconURL: user?.avatarURL() || null })
-            .addFields(
-                [
-                    {
-                        name: 'Enter these numbers',
-                        value: `\`\`\`js\n${pin}\n\`\`\``,
-                    },
-                    {
-                        name: 'Input',
-                        value: '```js\n \n```',
-                    },
-                ]
-            )
-
-        interaction.editReply({ embeds: [verifyEmbed], components, ephemeral: true })
-    }
-
-    /**
-     * @param {object} options
-     * @param {number} options.number
-     * @param {import("discord.js").ButtonInteraction} options.interaction
+     * Possible inputs
+     * Nothing        -> ...            -> Just generate a new pin                      -> Done
+     * A Number       -> 123            -> Just change pin to this number               -> Done
+     * A string       -> "123"          -> Treat as a literal pin       -> Check it  -> Done
+     * Anything else  -> { ["stuff" ] } -> Throw error                                  -> Done
      */
-    async verificationAddNumber(options = {}) {
-        const { number, interaction } = options;
+    let _newPin = newPin;
+    const newPinType = typeof _newPin;
 
-        // Get the old embed and edit it
-        const oldEmbedData = interaction.message.embeds[0].data;
-        const oldFields = oldEmbedData.fields;
+    if (newPinType === "undefined") return (this.pin = this.generatePin());
+    else if (newPinType === "number") {
+      this.verifyPinLength(_newPin)
+      return (this.pin = _newPin);
+    } else if (newPinType === "string") {
 
-        let previousInput = oldEmbedData.fields[1].value.slice(3);
-        previousInput = previousInput.substring(0, previousInput.length - 3);
-        previousInput = previousInput.replace(' ', '');
-        previousInput = previousInput.replace('js\n', '');
-        previousInput = previousInput.replace('\n', '');
+      this.verifyPinLength(_newPin)
+      this.pin = this.convertToNum(_newPin)
+    } else {
+      throw new IncorrectOptionTypeError("Pin", "number | string | undefined", newPinType);
+    }
+  }
 
-        const updatedInput = `\`\`\`js\n${previousInput?.toString()}${number.toString()}\n\`\`\``;
-
-        const embed = new EmbedBuilder(oldEmbedData)
-            .setFields(
-                [
-                    {
-                        name: 'Enter these numbers',
-                        value: oldFields[0].value,
-                    },
-                    {
-                        name: 'Input',
-                        value: updatedInput,
-                    },
-                ]
-            )
-
-
-        interaction.update({ embeds: [embed] })
+  /**
+   * @param {Embed} embed The embed to verify
+   *
+   * @description This will check if the embed provided to a function contains the correct properties
+   */
+  static verifyEmbed(embed) {
+    const embedType = typeof embed;
+    if (embedType !== "object") {
+      throw new IncorrectOptionTypeError("embed", "object", embedType);
     }
 
-    /**
-     * @param {object} options
-     * @param {import("discord.js").User} options.user
-     * @param {import("discord.js").ButtonInteraction} options.interaction
-     */
-    async verificationRetry(options = {}) {
-        const { user, interaction } = options;
-
-        let pin = (Math.floor(Math.random() * 10000) + 10000).toString().substring(1);
-        this._pin = pin;
-
-        const verifyEmbed = new EmbedBuilder()
-            .setAuthor({ name: user.tag, iconURL: user?.avatarURL() || null })
-            .addFields(
-                [
-                    {
-                        name: 'Enter these numbers',
-                        value: `\`\`\`js\n${pin}\n\`\`\``,
-                    },
-                    {
-                        name: 'Input',
-                        value: '```js\n \n```',
-                    },
-                ]
-            )
-
-        interaction.update({ embeds: [verifyEmbed] })
+    if (typeof embed.fields === "undefined") {
+      throw new MissingFieldsError();
     }
 
-    /**
-     * @param {object} options
-     * @param {import("discord.js").ButtonInteraction} options.interaction
-     * @param {import("discord.js").Role} options.role
-     */
-    async verificationCheck(options = {}) {
-        const { interaction, role } = options;
-
-        // Get the final number
-        const oldEmbedData = interaction.message.embeds[0].data;
-        const oldFields = oldEmbedData.fields;
-
-        let originalNumber = this._pin
-
-        let inputNumber = oldFields[1].value.slice(3);
-        inputNumber = inputNumber.substring(0, inputNumber.length - 3);
-        inputNumber = inputNumber.replace(' ', '');
-        inputNumber = inputNumber.replace('js\n', '');
-        inputNumber = inputNumber.replace('\n', '');
-
-        if (originalNumber == inputNumber) {
-            try {
-                interaction.member.roles.add(role);
-            }
-            catch (err) {
-                console.log(err);
-                interaction.member.send('Please dm the owner of the server to give the role too you since I do not have the propper permissions.');
-            }
-
-            interaction.update({ content: `You have been verified!`, embeds: [], components: [] })
-        } else {
-            interaction.update({ content: `Incorrect!`, embeds: [], components: [] })
-        }
+    if (!Array.isArray(embed.fields)) {
+      throw new IncorrectOptionTypeError("embed.fields", "Array", typeof embed.fields);
     }
 
-    /**
-     * @param {number} newPin
-     */
-    async verificationNewPin(newPin) {
-        let pin = newPin || (Math.floor(Math.random() * 10000) + 10000).toString().substring(1);
-        this._pin = pin;
+    if (embed.fields.length !== 2) {
+      throw new IncorrectFieldsLengthError("embed.fields");
     }
-}
+
+    for (let i = 0; i < embed.fields.length; i++) {
+      const element = embed.fields[i];
+      const elementType = typeof element;
+
+      if (elementType !== "object") {
+        throw new IncorrectFieldTypeError(`embed.fields[${i}]`, "object", elementType);
+      }
+
+      const elementNameType = typeof element.name;
+      const elementValueType = typeof element.value;
+
+      if (elementNameType !== "string") {
+        throw new IncorrectFieldTypeError(
+          `embed.fields[${i}].name`,
+          "string",
+          elementNameType
+        );
+      }
+
+      if (elementValueType !== "string") {
+        throw new IncorrectFieldTypeError(
+          `embed.fields[${i}].value`,
+          "string",
+          elementValueType
+        );
+      }
+    }
+  }
+
+  /**
+   * @description Takes in a string and attempts to convert it to a number
+   * 
+   * @param {string} numStr The string to convert to a number
+   * 
+   * @returns {number} The number
+   * 
+   * @throws Throws an error if unable to convert string to number
+   */
+  static convertToNum(numStr) {
+    if (/^\d+$/.test(numStr)) {
+      numStr = parseInt(numStr); // Convert to a number
+      return numStr;
+    } else {
+      throw new InvalidPinError();
+    }
+  }
+
+  /**
+   * @description Verifies that the pin is the correct length
+   * 
+   * @param {number} pin The pin
+   */
+  static verifyPinLength(pin) {
+    if (pin.toString().length !== 4) {
+      throw new InvalidPinLengthError();
+    }
+  }
+
+  /**
+   * @description Converts an embed builder to an embed
+   * 
+   * @param {EmbedBuilder} embed The embed builder
+   * 
+   * @returns {Embed} The embed
+   */
+  static convertEmbedBuilder(embed) {
+    return embed?.data;
+  }
+};
