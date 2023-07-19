@@ -58,19 +58,34 @@ class IncorrectFieldTypeError extends VerificationError {
   }
 }
 
+class Verification {
+  #pin;
+  #verified;
 
-module.exports = class Verification {
-  constructor({ pin } = { pin: undefined }) {
-    this.pin = pin || this.generatePin();
-    this.verified = false;
+  /**
+   * @param {object} options The options object
+   * @param {number|undefined} options.pin The pin
+   */
+  constructor(options = { pin: undefined }) {
+    this.#pin = options.pin || this.#generatePin();
+    this.#verified = false;
+  }
+
+  // Getter for the pin property
+  get pin() {
+    return this.#pin;
   }
 
   /**
-   * @description This will generate a new 4 digit pin
-   * @returns {string} A 4 digit number
+   * @param {number} newPin
    */
-  static generatePin() {
-    return (Math.floor(Math.random() * 10000) + 10000).toString().substring(1);
+  set #setPin(newPin) {
+    this.#verifyPinLength(newPin);
+    this.#pin = this.#convertToNum(newPin);
+  }
+
+  get verified() {
+    return this.#verified;
   }
 
   /**
@@ -136,7 +151,7 @@ module.exports = class Verification {
     const { number } = options;
     let { embed } = options;
 
-    if (embed instanceof EmbedBuilder) embed = this.convertEmbedBuilder(embed);
+    if (embed instanceof EmbedBuilder) embed = this.#convertEmbedBuilder(embed);
 
     //#region Error Handling
     const lengthOfObj = Object.keys(options).length;
@@ -150,7 +165,7 @@ module.exports = class Verification {
 
     }
 
-    this.verifyEmbed(embed);
+    this.#verifyEmbed(embed);
     //#endregion
     const previousInput = embed.fields[1].value.replace(/```|js|\n|\s/g, "");
 
@@ -176,7 +191,7 @@ module.exports = class Verification {
    * @returns {EmbedBuilder} Returns the new embed builder
    */
   verificationRetry() {
-    this.pin = this.generatePin();
+    this.verificationNewPin();
 
     const verifyEmbed = new EmbedBuilder().addFields(
       {
@@ -200,14 +215,14 @@ module.exports = class Verification {
    * @returns {boolean} Wether or not the user passed verification
    */
   verificationCheck(embed) {
-    if (embed instanceof EmbedBuilder) embed = this.convertEmbedBuilder(embed);
+    if (embed instanceof EmbedBuilder) embed = this.#convertEmbedBuilder(embed);
     const originalNumber = this.pin;
     const inputNumberStr = embed.fields[1].value.replace(/```|js|\n|\s/g, ""); // Remove non-numeric characters
-    const inputNumber = this.convertToNum(inputNumberStr);
+    const inputNumber = this.#convertToNum(inputNumberStr);
 
     const isCorrect = originalNumber == inputNumber;
-    this.verified = isCorrect;
-    return this.verified;
+    this.#verified = isCorrect;
+    return this.#verified;
   }
 
   /**
@@ -216,24 +231,15 @@ module.exports = class Verification {
    * @description This sets a new pin
    */
   verificationNewPin(newPin) {
-    /**
-     * Possible inputs
-     * Nothing        -> ...            -> Just generate a new pin                      -> Done
-     * A Number       -> 123            -> Just change pin to this number               -> Done
-     * A string       -> "123"          -> Treat as a literal pin       -> Check it  -> Done
-     * Anything else  -> { ["stuff" ] } -> Throw error                                  -> Done
-     */
-    let _newPin = newPin;
-    const newPinType = typeof _newPin;
-
-    if (newPinType === "undefined") return (this.pin = this.generatePin());
+    const newPinType = typeof newPin;
+    if (newPinType === "undefined") {
+      this.#setPin = this.#generatePin();
+    }
     else if (newPinType === "number") {
-      this.verifyPinLength(_newPin)
-      return (this.pin = _newPin);
+      this.#setPin = newPin;
     } else if (newPinType === "string") {
 
-      this.verifyPinLength(_newPin)
-      this.pin = this.convertToNum(_newPin)
+      this.#setPin = newPin
     } else {
       throw new IncorrectOptionTypeError("Pin", "number | string | undefined", newPinType);
     }
@@ -244,7 +250,7 @@ module.exports = class Verification {
    *
    * @description This will check if the embed provided to a function contains the correct properties
    */
-  static verifyEmbed(embed) {
+  #verifyEmbed(embed) {
     const embedType = typeof embed;
     if (embedType !== "object") {
       throw new IncorrectOptionTypeError("embed", "object", embedType);
@@ -300,7 +306,7 @@ module.exports = class Verification {
    * 
    * @throws Throws an error if unable to convert string to number
    */
-  static convertToNum(numStr) {
+  #convertToNum(numStr) {
     if (/^\d+$/.test(numStr)) {
       numStr = parseInt(numStr); // Convert to a number
       return numStr;
@@ -314,7 +320,7 @@ module.exports = class Verification {
    * 
    * @param {number} pin The pin
    */
-  static verifyPinLength(pin) {
+  #verifyPinLength(pin) {
     if (pin.toString().length !== 4) {
       throw new InvalidPinLengthError();
     }
@@ -327,7 +333,17 @@ module.exports = class Verification {
    * 
    * @returns {Embed} The embed
    */
-  static convertEmbedBuilder(embed) {
+  #convertEmbedBuilder(embed) {
     return embed?.data;
   }
+
+  /**
+   * @description This will generate a new 4 digit pin
+   * @returns {string} A 4 digit number
+   */
+  #generatePin() {
+    return Math.floor(Math.random() * 9000) + 1000; // Generate a 4-digit number
+  }
 };
+
+module.exports = Verification;

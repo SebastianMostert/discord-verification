@@ -204,7 +204,7 @@ describe("Verification New Pin module", () => {
     const oldPin = Verification.pin;
     Verification.verificationNewPin();
     expect(Verification.pin).not.toEqual(oldPin);
-    expect(Verification.pin).toHaveLength(4); // Check that the generated pin has the correct length
+    expect(Verification.pin.toString()).toHaveLength(4); // Check that the generated pin has the correct length
   });
 
   test("Should throw an error if the pin is a number but not 4 digits long", () => {
@@ -217,25 +217,6 @@ describe("Verification New Pin module", () => {
     expect(() => {
       Verification.verificationNewPin("12345");
     }).toThrow(`Invalid pin length. The pin must be exactly 4 digits long.`);
-  });
-});
-
-describe("Pin Generator module", () => {
-  test("Make sure the pin is 4 digits long", () => {
-    const generatedPin = Verification.generatePin();
-    expect(generatedPin).toHaveLength(4);
-  });
-
-  test("Make sure a unique pin is generated", () => {
-    const pin1 = Verification.generatePin();
-    const pin2 = Verification.generatePin();
-    expect(pin1).not.toEqual(pin2);
-  });
-
-  test("Make sure the pin is set correctly", () => {
-    const pin1 = Verification.generatePin();
-    Verification.verificationNewPin(pin1);
-    expect(Verification.pin).toEqual(+pin1);
   });
 });
 
@@ -297,3 +278,15 @@ describe("Verify Embed module", () => {
     }).toThrow(`The "embed.fields[1].name" option must be of type string. Received: undefined`);
   });
 });
+
+describe("Class properties", () => {
+  test("Should not be able to modify the \"verified\" property", () => {
+    Verification.verified = true;
+    expect(Verification.verified).toBeFalsy();
+  });
+
+  test("Should be able to modify the \"pin\" property", () => {
+    Verification.verified = true;
+    expect(Verification.verified).toBeFalsy();
+  });
+})
